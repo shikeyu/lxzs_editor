@@ -1,3 +1,4 @@
 mysql_connector_python
 python_bcrypt
 streamlit
+bcrypt
