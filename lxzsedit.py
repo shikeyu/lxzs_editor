@@ -137,13 +137,51 @@ def update_record(fname, record_id, ctext, editor):
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute(f"UPDATE `{fname}` SET ctext = %s, editor = %s, update_time = %s WHERE id = %s", (ctext, editor, now, record_id))
         conn.commit()
-        st.success("Record updated successfully!")
+        st.success("译文保存完成!")
     except Error as e:
         st.error(f"Error: {e}")
     finally:
         if conn.is_connected():
             cursor.close()
             conn.close()
+
+# 输入文本检测
+def validate_string(s):
+    # 用于存放括号的栈
+    stack = []
+    
+    # 遍历字符串
+    i = 0
+    while i < len(s):
+        if s[i] == '{':
+            if not stack or stack[-1] in ['[WAIT]', '[ENTER]','[NAME1]','[NAME2]']:
+                stack.append('{')
+            else:
+                print(stack[-1])
+                return False
+        elif s[i] == '}':
+            if not stack or stack[-1] != '{':
+                return False
+            stack.pop()
+        elif s[i] == '[':
+            # 检查特殊字符串 "[WAIT]" 或 "[ENTER]"
+            if s[i:i+6] == '[WAIT]':
+                stack.append('[WAIT]')
+                i += 5  # 跳过 "[WAIT]"
+            elif s[i:i+7] in ['[ENTER]','[NAME1]','[NAME2]']:
+                stack.append(s[i:i+7])
+                i += 6  # 跳过 "[ENTER]"等
+            else:
+                return False
+        elif s[i] == ']':
+            if not stack or stack[-1] not in ['[WAIT]', '[ENTER]','[NAME1]','[NAME2]']:
+                return False
+            stack.pop()
+        
+        i += 1
+    
+    # 最终栈应为空
+    return True
 
 # 登录界面
 def login_page():
@@ -211,26 +249,8 @@ def edit_page():
         if st.session_state.nowid<len(ids):
             st.session_state.nowid +=1
             st.rerun()
-    data = get_table_data(table,ids[selected_id])
-    id_mapping = {row['ID']: row for row in data}
-    if not data:
-        st.warning("No data found in the selected table.")
-        return
-    record = data[0]
-
-    if record:
-        st.write("编号:",hex(record['ID']),"   编辑者:",record['editor'],"   更新时间:",record['update_time'])
-        st.text_area("日文", value=record['jtext'], height=200)
-
-        # 编辑 ctext 字段
-        ctext = st.text_area("译文", value=record['ctext'], height=250)
-
-        if st.button("保存译文"):
-            if st.session_state.username != 'guest':
-                update_record(table, ids[selected_id], ctext, st.session_state.username)
-            else:
-                st.info('演示用户无法更新数据！')
-
+            
+    # 查找功能按钮
     search_text = st.sidebar.text_input("查找译文")
     search_in=st.sidebar.radio("搜索范围",["原文","译文"],index=1,horizontal=1)
     s_up,s_down=st.sidebar.columns(2, gap="small")
@@ -255,6 +275,31 @@ def edit_page():
         if found_id:
             st.session_state.nowid=ids.index(found_id)
             st.rerun()
+
+    data = get_table_data(table,ids[selected_id])
+    id_mapping = {row['ID']: row for row in data}
+    if not data:
+        st.warning("No data found in the selected table.")
+        return
+    record = data[0]
+
+    if record:
+        st.write("编号:",hex(record['ID']),"   编辑者:",record['editor'],"   更新时间:",record['update_time'])
+        st.text_area("日文", value=record['jtext'], height=200)
+
+        # 编辑 ctext 字段
+        ctext = st.text_area("译文", value=record['ctext'], height=250)
+
+        if st.button("保存译文"):
+            if st.session_state.username != 'guest':
+                if validate_string(ctext):
+                    update_record(table, ids[selected_id], ctext, st.session_state.username)
+                else:
+                    st.error('输入文本存在控制符错误，请检查！')
+                    st.stop()
+            else:
+                st.info('演示用户无法更新数据！')
+                st.stop()
 
 
 # 主程序
