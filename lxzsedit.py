@@ -307,7 +307,7 @@ def table_selection_page():
 # 编辑界面
 def edit_page():
     table = st.session_state.selected_table
-    table_title=st.session_state.selected_tabletitle
+    table_title = st.session_state.selected_tabletitle
     st.title(f"当前数据为: {table_title}")
     data_id = get_table_id(table)
     if not data_id:
@@ -362,30 +362,27 @@ def edit_page():
             st.session_state.nowid=ids.index(found_id)
             st.rerun()
 
-        
-    # 添加自动保存功能
-    auto_save = st.sidebar.checkbox("启用自动保存")
-    if auto_save:
-        st.sidebar.info("修改后100秒将自动保存")
-
-    data = get_table_data(table,ids[selected_id])
-    id_mapping = {row['ID']: row for row in data}
+    data = get_table_data(table, ids[selected_id])
     if not data:
         st.warning("No data found in the selected table.")
         return
     record = data[0]
 
     if record:
-        st.write("编号:",hex(record['ID']),"   编辑者:",record['editor'],"   更新时间:",record['update_time'])
+        st.write("编号:", hex(record['ID']), "   编辑者:", record['editor'], "   更新时间:", record['update_time'])
         # 左右分两列
-        s_left,s_right=st.columns(2, gap="small")
+        s_left, s_right = st.columns(2, gap="small")
         
         s_left.text_area("日文", value=record['jtext'], height=200)
 
         # 编辑 ctext 字段
-        ctext = s_left.text_area("译文", value=record['ctext'], height=250)
+        ctext = s_left.text_area("译文", value=record['ctext'], height=250, key="ctext")
         
         vtext = s_right.text_area("模拟显示", value=display_text(ctext), height=500)
+
+        # 检查文本是否有改动
+        if ctext != record['ctext']:
+            st.warning("译文已修改，请记得保存！")
 
         if s_left.button("保存译文"):
             if validate_string(ctext):
@@ -397,13 +394,6 @@ def edit_page():
             else:
                 st.error('输入文本存在控制符错误，请检查！')
                 st.stop()
-        
-        if auto_save:
-            if ctext != record['ctext']:
-                time.sleep(100)
-                success = update_record(table, ids[selected_id], ctext, st.session_state.username)
-                if success:
-                    st.success("自动保存成功！")
 
 
 # 主程序
