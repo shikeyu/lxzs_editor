@@ -180,8 +180,55 @@ def validate_string(s):
         
         i += 1
     
-    # 最终栈应为空
     return True
+
+# 将带控制符文本转换为显示文本
+
+def display_text(intext):
+    # 定义kzfdzb的替换规则
+    kzfdzb = [
+        {"okzf": "{D5 00 08 00 }", "nkzf": "[NAME1]"},
+        {"okzf": "{D5 00 09 00 }", "nkzf": "[NAME2]"},
+        {"okzf": "{CC 00 00 00 }", "nkzf": "[ENTER]"},
+        {"okzf": "{CC 00 01 03 }", "nkzf": "[WAIT]"},
+    ]
+
+    yw1 = intext.replace("\r\n", "\n")
+    display_text = ""
+    viewtext = ""
+
+    # 替换kzfdzb中的nkzf为对应的okzf
+    for i in range(4):
+        yw1 = yw1.replace(kzfdzb[i]["nkzf"], kzfdzb[i]["okzf"])
+
+    allyw = yw1.split("\n")
+    for ls in allyw:
+        if ls.startswith("{"):
+            if ls.startswith("{79"):  # 添加选择项
+                display_text += ls[19:] + "\n"
+            elif ls.startswith("{23"):  # 添加未知项
+                display_text += ls[10:] + "\n"
+            elif ls.startswith("{D9"):  # 添加未知项
+                viewtext += "＃"
+            elif ls == "{D5 00 08 00 }":
+                viewtext += "风海"
+            elif ls == "{D5 00 09 00 }":  # 添加姓名
+                viewtext += "纯也"
+            elif ls.startswith("{D1 07"):  # 添加关键词
+                viewtext += ls
+            elif ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }"]:
+                display_text += viewtext + "\n"
+                viewtext = ""
+                if ls == "{04 00 }":
+                    display_text += viewtext + "\n"
+        else:
+            viewtext += ls
+
+    if viewtext:
+        display_text += viewtext + "\n"
+
+    return display_text
+
 
 # 登录界面
 def login_page():
@@ -203,7 +250,7 @@ def table_selection_page():
     st.title("请选择要修改的文本库")
     tblist = get_filelist()
 
-    #生成简介列表及表映射
+    # 生成简介列表及表映射
     table_mapping = {row['title']: row for row in tblist}
     titles = [row['title'] for row in tblist]
 
@@ -256,7 +303,7 @@ def edit_page():
     s_up,s_down=st.sidebar.columns(2, gap="small")
     search_up=s_up.button("向前查找")
     search_down=s_down.button("向后查找")
-    #向前查找字符串
+    # 向前查找字符串
     if search_up:
         if search_in=='原文':
             found_id=get_id_up(table,ids[selected_id],search_text,'jtext')
@@ -285,12 +332,17 @@ def edit_page():
 
     if record:
         st.write("编号:",hex(record['ID']),"   编辑者:",record['editor'],"   更新时间:",record['update_time'])
-        st.text_area("日文", value=record['jtext'], height=200)
+        # 左右分两列
+        s_left,s_right=st.columns(2, gap="small")
+        
+        s_left.text_area("日文", value=record['jtext'], height=200)
 
         # 编辑 ctext 字段
-        ctext = st.text_area("译文", value=record['ctext'], height=250)
+        ctext = s_left.text_area("译文", value=record['ctext'], height=250)
+        
+        vtext = s_right.text_area("模拟显示", value=display_text(ctext), height=500)
 
-        if st.button("保存译文"):
+        if s_left.button("保存译文"):
             if st.session_state.username != 'guest':
                 if validate_string(ctext):
                     update_record(table, ids[selected_id], ctext, st.session_state.username)
@@ -315,6 +367,7 @@ def main():
     if not st.session_state.logged_in:
         login_page()
     elif st.session_state.page == 'edit':
+        st.set_page_config(layout="wide")
         edit_page()
     else:
         table_selection_page()
