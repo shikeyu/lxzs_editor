@@ -133,8 +133,7 @@ def get_table_data(fname,id):
 # 更新记录
 def update_record(fname, record_id, ctext, editor):
     if editor == 'guest':
-        st.error("演示用户无权更新数据！")
-        return False
+        return False, "演示用户无权更新数据！"
 
     try:
         conn = create_connection()
@@ -143,14 +142,11 @@ def update_record(fname, record_id, ctext, editor):
         cursor.execute(f"UPDATE `{fname}` SET ctext = %s, editor = %s, update_time = %s WHERE id = %s", (ctext, editor, now, record_id))
         conn.commit()
         if cursor.rowcount > 0:
-            st.success("译文保存成功!")
-            return True
+            return True, "译文保存成功!"
         else:
-            st.warning("没有数据被更新，可能是因为内容没有变化。")
-            return False
+            return False, "没有数据被更新，可能是因为内容没有变化。"
     except Error as e:
-        st.error(f"保存失败: {e}")
-        return False
+        return False, f"保存失败: {e}"
     finally:
         if conn and conn.is_connected():
             cursor.close()
@@ -387,13 +383,15 @@ def edit_page():
         if s_left.button("保存译文"):
             if validate_string(ctext):
                 with st.spinner('正在保存...'):
-                    success = update_record(table, ids[selected_id], ctext, st.session_state.username)
+                    success, message = update_record(table, ids[selected_id], ctext, st.session_state.username)
                     if success:
+                        st.success(message)
                         time.sleep(0.5)  # 给一点时间让数据库更新
-                    st.rerun()
+                        st.rerun()
+                    else:
+                        st.error(message)
             else:
                 st.error('输入文本存在控制符错误，请检查！')
-                st.stop()
 
 
 # 主程序
