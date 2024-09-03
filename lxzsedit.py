@@ -132,6 +132,10 @@ def get_table_data(fname,id):
 
 # 更新记录
 def update_record(fname, record_id, ctext, editor):
+    if editor == 'guest':
+        st.error("演示用户无权更新数据！")
+        return False
+
     try:
         conn = create_connection()
         cursor = conn.cursor()
@@ -140,10 +144,13 @@ def update_record(fname, record_id, ctext, editor):
         conn.commit()
         if cursor.rowcount > 0:
             st.success("译文保存成功!")
+            return True
         else:
             st.warning("没有数据被更新，可能是因为内容没有变化。")
+            return False
     except Error as e:
         st.error(f"保存失败: {e}")
+        return False
     finally:
         if conn and conn.is_connected():
             cursor.close()
@@ -359,7 +366,7 @@ def edit_page():
     # 添加自动保存功能
     auto_save = st.sidebar.checkbox("启用自动保存")
     if auto_save:
-        st.sidebar.info("修改后5秒将自动保存")
+        st.sidebar.info("修改后100秒将自动保存")
 
     data = get_table_data(table,ids[selected_id])
     id_mapping = {row['ID']: row for row in data}
@@ -381,24 +388,22 @@ def edit_page():
         vtext = s_right.text_area("模拟显示", value=display_text(ctext), height=500)
 
         if s_left.button("保存译文"):
-            if st.session_state.username != 'guest':
-                if validate_string(ctext):
-                    with st.spinner('正在保存...'):
-                        update_record(table, ids[selected_id], ctext, st.session_state.username)
+            if validate_string(ctext):
+                with st.spinner('正在保存...'):
+                    success = update_record(table, ids[selected_id], ctext, st.session_state.username)
+                    if success:
                         time.sleep(0.5)  # 给一点时间让数据库更新
-                    st.rerun()  # 使用新的 st.rerun() 替代 st.experimental_rerun()
-                else:
-                    st.error('输入文本存在控制符错误，请检查！')
-                    st.stop()
+                    st.rerun()
             else:
-                st.info('演示用户无法更新数据！')
+                st.error('输入文本存在控制符错误，请检查！')
                 st.stop()
         
         if auto_save:
             if ctext != record['ctext']:
-                time.sleep(5)
-                update_record(table, ids[selected_id], ctext, st.session_state.username)
-                st.success("自动保存成功！")
+                time.sleep(100)
+                success = update_record(table, ids[selected_id], ctext, st.session_state.username)
+                if success:
+                    st.success("自动保存成功！")
 
 
 # 主程序
