@@ -3,6 +3,7 @@ import mysql.connector
 import bcrypt
 from mysql.connector import Error
 from datetime import datetime
+import time
 
 # 连接到远端 MySQL 数据库
 def create_connection():
@@ -82,31 +83,31 @@ def get_table_id(fname):
 # 向前查找包含指定字符的数据ID
 def get_id_up(fname,s_id,s_text,f_text):
     try:
-        conn = create_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(f"SELECT max(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE '%{s_text}%' AND ID < {s_id}")
-        result = cursor.fetchall()
-        return result[0]['get_id']
+        with create_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            query = f"SELECT max(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE %s AND ID < %s"
+            cursor.execute(query, (f"%{s_text}%", s_id))
+            result = cursor.fetchone()
+            return result['get_id'] if result else None
     except Error as e:
-        st.error(f"Error: {e}")
-        return []
-    finally:
+        st.error("查找过程中出错。")
+        return None
         if conn.is_connected():
             cursor.close()
             conn.close()
             
 # 向后查找包含指定字符的数据ID
-def get_id_down(fname,s_id,s_text,f_text):
+def get_id_down(fname, s_id, s_text, f_text):
     try:
-        conn = create_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(f"SELECT min(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE '%{s_text}%' AND ID > {s_id}")
-        result = cursor.fetchall()
-        return result[0]['get_id']
+        with create_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            query = f"SELECT min(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE %s AND ID > %s"
+            cursor.execute(query, (f"%{s_text}%", s_id))
+            result = cursor.fetchone()
+            return result['get_id'] if result else None
     except Error as e:
-        st.error(f"Error: {e}")
-        return []
-    finally:
+        st.error("查找过程中出错。")
+        return None
         if conn.is_connected():
             cursor.close()
             conn.close()
@@ -137,11 +138,14 @@ def update_record(fname, record_id, ctext, editor):
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute(f"UPDATE `{fname}` SET ctext = %s, editor = %s, update_time = %s WHERE id = %s", (ctext, editor, now, record_id))
         conn.commit()
-        st.success("译文保存完成!")
+        if cursor.rowcount > 0:
+            st.success("译文保存成功!")
+        else:
+            st.warning("没有数据被更新，可能是因为内容没有变化。")
     except Error as e:
-        st.error(f"Error: {e}")
+        st.error(f"保存失败: {e}")
     finally:
-        if conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
 
@@ -207,7 +211,7 @@ def display_text(intext):
             if ls.startswith("{79"):  # 添加选择项
                 display_text += ls[19:] + "\n"
             elif ls.startswith("{23"):  # 添加未知项
-                display_text += ls[10:] + "\n"
+              display_text += ls[10:-1] + "\n"
             elif ls.startswith("{D9"):  # 添加未知项
                 viewtext += "＃"
             elif ls == "{D5 00 08 00 }":
@@ -244,23 +248,51 @@ def login_page():
             st.rerun()
         else:
             st.error("用户名或密码错误！！")
+            time.sleep(2) 
+
+# 获取用户权限
+def get_user_permissions(username):
+    try:
+        conn = create_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT t.table_name, t.title 
+            FROM tablelist t
+            JOIN user_table ut ON t.ID = ut.table_id
+            JOIN Users u ON ut.user_id = u.Userid
+            WHERE u.username = %s
+        """, (username,))
+        return cursor.fetchall()
+    except Error as e:
+        st.error(f"错误：{e}")
+        return []
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
 
 # 表选择界面
 def table_selection_page():
     st.title("请选择要修改的文本库")
-    tblist = get_filelist()
+    
+    # 获取当前用户有权限的表
+    user_tables = get_user_permissions(st.session_state.username)
+
+    if not user_tables:
+        st.warning("您没有权限编辑任何表格。")
+        return
 
     # 生成简介列表及表映射
-    table_mapping = {row['title']: row for row in tblist}
-    titles = [row['title'] for row in tblist]
+    table_mapping = {row['title']: row for row in user_tables}
+    titles = [row['title'] for row in user_tables]
 
     selected_table = st.selectbox("文本库", titles)
     if st.button("打开数据表"):
         if selected_table:
-            st.session_state.selected_table =table_mapping[selected_table]['table_name']
-            st.session_state.selected_tabletitle=selected_table
+            st.session_state.selected_table = table_mapping[selected_table]['table_name']
+            st.session_state.selected_tabletitle = selected_table
             st.session_state.page = 'edit'
-            st.session_state.nowid=-1
+            st.session_state.nowid = -1
             st.rerun()
         else:
             st.warning("请选择要打开的表")
@@ -323,6 +355,12 @@ def edit_page():
             st.session_state.nowid=ids.index(found_id)
             st.rerun()
 
+        
+    # 添加自动保存功能
+    auto_save = st.sidebar.checkbox("启用自动保存")
+    if auto_save:
+        st.sidebar.info("修改后5秒将自动保存")
+
     data = get_table_data(table,ids[selected_id])
     id_mapping = {row['ID']: row for row in data}
     if not data:
@@ -345,13 +383,22 @@ def edit_page():
         if s_left.button("保存译文"):
             if st.session_state.username != 'guest':
                 if validate_string(ctext):
-                    update_record(table, ids[selected_id], ctext, st.session_state.username)
+                    with st.spinner('正在保存...'):
+                        update_record(table, ids[selected_id], ctext, st.session_state.username)
+                        time.sleep(0.5)  # 给一点时间让数据库更新
+                    st.rerun()  # 使用新的 st.rerun() 替代 st.experimental_rerun()
                 else:
                     st.error('输入文本存在控制符错误，请检查！')
                     st.stop()
             else:
                 st.info('演示用户无法更新数据！')
                 st.stop()
+        
+        if auto_save:
+            if ctext != record['ctext']:
+                time.sleep(5)
+                update_record(table, ids[selected_id], ctext, st.session_state.username)
+                st.success("自动保存成功！")
 
 
 # 主程序
