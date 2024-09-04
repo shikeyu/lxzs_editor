@@ -387,7 +387,6 @@ def edit_page():
                     if success:
                         st.success(message)
                         time.sleep(0.5)  # 给一点时间让数据库更新
-                        st.rerun()
                     else:
                         st.error(message)
             else:
