@@ -295,7 +295,6 @@ def table_selection_page():
             st.session_state.selected_table = table_mapping[selected_table]['table_name']
             st.session_state.selected_tabletitle = selected_table
             st.session_state.page = 'edit'
-            st.session_state.nowid = -1
             st.rerun()
         else:
             st.warning("请选择要打开的表")
@@ -313,12 +312,13 @@ def edit_page():
     # 生成 ID 列表
     ids = [row['ID'] for row in data_id]
 
-    if st.session_state.nowid<0:
+    if  'nowid' not in st.session_state:
         st.session_state.nowid=0
 
     # 通过滑动条选择记录行
-    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids), value=st.session_state.nowid)
+    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids), value=st.session_state.nowid,key="selected_id")
     st.session_state.nowid=selected_id
+   
     b_up,b_down=st.sidebar.columns(2, gap="small")
     button_up=b_up.button("上一条")
     button_down=b_down.button("下一条")
@@ -338,6 +338,7 @@ def edit_page():
     s_up,s_down=st.sidebar.columns(2, gap="small")
     search_up=s_up.button("向前查找")
     search_down=s_down.button("向后查找")
+    Control_view=st.sidebar.checkbox("日文显示控制符", value=True)
     # 向前查找字符串
     if search_up:
         if search_in=='原文':
@@ -369,24 +370,28 @@ def edit_page():
         # 左右分两列
         s_left, s_right = st.columns(2, gap="small")
         
-        s_left.text_area("日文", value=record['jtext'], height=200)
+        if Control_view:
+            s_left.text_area("日文", value=record['jtext'], height=200)
+        else:
+            s_left.text_area("日文", value=display_text(record['jtext']), height=200)  
+
+        ctext=record['ctext']
 
         # 编辑 ctext 字段
         ctext = s_left.text_area("译文", value=record['ctext'], height=250, key="ctext")
-        
+           
         vtext = s_right.text_area("模拟显示", value=display_text(ctext), height=500)
 
-        # 检查文本是否有改动
-        if ctext != record['ctext']:
-            st.warning("译文已修改，请记得保存！")
 
         if s_left.button("保存译文"):
+            time.sleep(0.5)
             if validate_string(ctext):
                 with st.spinner('正在保存...'):
                     success, message = update_record(table, ids[selected_id], ctext, st.session_state.username)
                     if success:
                         st.success(message)
                         time.sleep(0.5)  # 给一点时间让数据库更新
+                        st.rerun()
                     else:
                         st.error(message)
             else:
