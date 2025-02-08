@@ -228,7 +228,7 @@ def display_text(intext):
                 viewtext = ""
                 if ls == "{04 00 }":
                     display_text += viewtext + "\n"
-        else:
+        elif not ls.startswith("#"):  #去除注释行
             viewtext += ls
 
     if viewtext:
