@@ -4,6 +4,7 @@ import bcrypt
 from mysql.connector import Error
 from datetime import datetime
 import time
+import streamlit.components.v1 as components
 
 # 连接到远端 MySQL 数据库
 def create_connection():
@@ -322,7 +323,16 @@ def edit_page():
     b_up,b_down=st.sidebar.columns(2, gap="small")
     button_up=b_up.button("上一条")
     button_down=b_down.button("下一条")
-    #row1=st.row([button_up,button_down])
+          
+    # 查找功能按钮
+    search_text = st.sidebar.text_input("查找译文")
+    search_in=st.sidebar.radio("搜索范围",["原文","译文"],index=1,horizontal=1)
+    s_up,s_down=st.sidebar.columns(2, gap="small")
+    search_up=s_up.button("向前查找")
+    search_down=s_down.button("向后查找")
+    Control_view=st.sidebar.checkbox("日文显示控制符", value=True)
+
+    #显示上下条目
     if button_up:
         if st.session_state.nowid>=0:
             st.session_state.nowid -=1
@@ -331,16 +341,9 @@ def edit_page():
         if st.session_state.nowid<len(ids):
             st.session_state.nowid +=1
             st.rerun()
-            
-    # 查找功能按钮
-    search_text = st.sidebar.text_input("查找译文")
-    search_in=st.sidebar.radio("搜索范围",["原文","译文"],index=1,horizontal=1)
-    s_up,s_down=st.sidebar.columns(2, gap="small")
-    search_up=s_up.button("向前查找")
-    search_down=s_down.button("向后查找")
-    Control_view=st.sidebar.checkbox("日文显示控制符", value=True)
+  
     # 向前查找字符串
-    if search_up:
+    if search_up and search_text:
         if search_in=='原文':
             found_id=get_id_up(table,ids[selected_id],search_text,'jtext')
         else:
@@ -350,7 +353,7 @@ def edit_page():
             st.rerun()
         
     #向后查找字符串
-    if search_down:
+    if search_down and search_text:
         if search_in=='原文':
             found_id=get_id_down(table,ids[selected_id],search_text,'jtext')
         else:
@@ -382,6 +385,11 @@ def edit_page():
            
         vtext = s_right.text_area("模拟显示", value=display_text(ctext), height=500)
 
+        if search_text:
+            # 使用Streamlit的组件来插入自定义HTML/JS
+            components.html(
+                '''<script>document.addEventListener('DOMContentLoaded', function() {window.find("流行");});</script>'''
+            )
 
         if s_left.button("保存译文"):
             time.sleep(0.5)
