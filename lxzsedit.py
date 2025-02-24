@@ -338,7 +338,7 @@ def edit_page():
             st.session_state.nowid -=1
             st.rerun()
     if button_down:
-        if st.session_state.nowid<len(ids):
+        if st.session_state.nowid<len(ids)-1:
             st.session_state.nowid +=1
             st.rerun()
   
