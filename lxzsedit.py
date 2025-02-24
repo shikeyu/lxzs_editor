@@ -317,7 +317,7 @@ def edit_page():
         st.session_state.nowid=0
 
     # 通过滑动条选择记录行
-    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1, value=st.session_state.nowid,key="selected_id")
+    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) , value=st.session_state.nowid,key="selected_id")
     st.session_state.nowid=selected_id
    
     b_up,b_down=st.sidebar.columns(2, gap="small")
@@ -338,7 +338,7 @@ def edit_page():
             st.session_state.nowid -=1
             st.rerun()
     if button_down:
-        if st.session_state.nowid<len(ids)-1:
+        if st.session_state.nowid<len(ids):
             st.session_state.nowid +=1
             st.rerun()
   
