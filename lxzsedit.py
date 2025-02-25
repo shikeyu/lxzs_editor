@@ -237,6 +237,69 @@ def display_text(intext):
 
     return display_text
 
+# 获取所有留言及其跟帖
+def get_messages_with_replies():
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    # 获取所有留言
+    table = st.session_state.selected_table
+    cursor.execute("SELECT * FROM messages WHERE tablename=%s ORDER BY created_at DESC",(table,))
+    messages = cursor.fetchall()
+    
+    # 获取每条留言的跟帖
+    for message in messages:
+        cursor.execute("SELECT * FROM replies WHERE message_id = %s ORDER BY created_at ASC", (message['id'],))
+        message['replies'] = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    return messages
+
+# 显示留言和跟帖
+def display_messages(messages):
+    with st.sidebar.container(height = 300 , border = True):
+        for i, message in enumerate(messages):
+            # 使用相同的背景色显示留言及其回复
+            if i % 2 == 0:
+                background_color = "#f0f0f0"  # 浅灰色背景
+            else:
+                background_color = "#ffffff"  # 白色背景
+        
+            # 显示留言
+            st.markdown(
+                f'<div style="background-color: {background_color}; padding: 2px; border-radius: 1px; margin-bottom: 1px; font-size: 11px;">'
+                f'<strong>{message["username"]}</strong> 留言于 <code>{message["created_at"]}</code>:<br>'
+                f'</div>'
+                f'<div style="background-color: {background_color}; padding: 2px; border-radius: 1px; margin-bottom: 1px; font-size: 16px;">'
+                f'{message["message"]}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        
+            # 显示跟帖（紧凑显示）
+            #if message['replies']:
+                #for reply in message['replies']:
+                    #st.markdown(
+                        #f'<div style="background-color: {background_color}; margin-left: 2px; padding: 5px; border-radius: 5px; margin-bottom: 5px; color: #555555;">'
+                        #f'<strong>{reply["username"]}</strong> : {reply["reply"]}'
+                        #f'</div>',
+                        #unsafe_allow_html=True
+                    #)
+        
+        # 在每条留言之间添加空行
+        st.markdown("<br>", unsafe_allow_html=True)
+
+# 插入留言
+def insert_message(username, message):
+    conn = create_connection()
+    cursor = conn.cursor()
+    table = st.session_state.selected_table
+    query = "INSERT INTO messages (username, message, tablename) VALUES (%s, %s, %s)"
+    cursor.execute(query, (username, message,table))
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 # 登录界面
 def login_page():
@@ -317,8 +380,11 @@ def edit_page():
         st.session_state.nowid=0
 
     # 通过滑动条选择记录行
-    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1 , value=st.session_state.nowid,key="selected_id")
+    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1, value=st.session_state.nowid,key="selected_id")
+    if st.session_state.nowid != selected_id:
+        st.session_state.need_replace = False
     st.session_state.nowid=selected_id
+    
    
     b_up,b_down=st.sidebar.columns(2, gap="small")
     button_up=b_up.button("上一条")
@@ -326,20 +392,38 @@ def edit_page():
           
     # 查找功能按钮
     search_text = st.sidebar.text_input("查找译文")
+    s_replace,s_rpbutton=st.sidebar.columns([0.77,0.23], gap="small")
+    replace_text = s_replace.text_input("替换为",label_visibility="collapsed")
+    do_replace=s_rpbutton.button("替换")
     search_in=st.sidebar.radio("搜索范围",["原文","译文"],index=1,horizontal=1)
     s_up,s_down=st.sidebar.columns(2, gap="small")
     search_up=s_up.button("向前查找")
     search_down=s_down.button("向后查找")
     Control_view=st.sidebar.checkbox("日文显示控制符", value=True)
+    
+    # 获取所有留言及其跟帖
+    #messages = get_messages_with_replies()
+
+    # 显示留言和跟帖
+    #display_messages(messages)
+        
+    #newchat=st.sidebar.chat_input(placeholder="您的留言。")
+
+    # 更新留言
+    #if newchat:
+    #    insert_message(st.session_state.username,newchat)
+    #    st.rerun()
 
     #显示上下条目
     if button_up:
         if st.session_state.nowid>=0:
             st.session_state.nowid -=1
+            st.session_state.need_replace = False
             st.rerun()
     if button_down:
         if st.session_state.nowid<len(ids) - 1:
             st.session_state.nowid +=1
+            st.session_state.need_replace = False
             st.rerun()
   
     # 向前查找字符串
@@ -350,6 +434,7 @@ def edit_page():
             found_id=get_id_up(table,ids[selected_id],search_text,'ctext')
         if found_id:
             st.session_state.nowid=ids.index(found_id)
+            st.session_state.need_replace = False
             st.rerun()
         
     #向后查找字符串
@@ -360,7 +445,9 @@ def edit_page():
             found_id=get_id_down(table,ids[selected_id],search_text,'ctext')
         if found_id:
             st.session_state.nowid=ids.index(found_id)
+            st.session_state.need_replace = False
             st.rerun()
+    
 
     data = get_table_data(table, ids[selected_id])
     if not data:
@@ -378,6 +465,11 @@ def edit_page():
         else:
             s_left.text_area("日文", value=display_text(record['jtext']), height=200)  
 
+        #查找替换字符串
+        if do_replace and replace_text and search_text:
+            record['ctext']=record['ctext'].replace(search_text,replace_text)
+            st.session_state.need_replace = True
+            
         ctext=record['ctext']
 
         # 编辑 ctext 字段
@@ -385,16 +477,13 @@ def edit_page():
            
         vtext = s_right.text_area("模拟显示", value=display_text(ctext), height=500)
 
-        if search_text:
-            # 使用Streamlit的组件来插入自定义HTML/JS
-            components.html(
-                '''<script>document.addEventListener('DOMContentLoaded', function() {window.find("流行");});</script>'''
-            )
-
         if s_left.button("保存译文"):
             time.sleep(0.5)
             if validate_string(ctext):
                 with st.spinner('正在保存...'):
+                    if st.session_state.need_replace:
+                        ctext=ctext.replace(search_text,replace_text)
+                        st.session_state.need_replace = False 
                     success, message = update_record(table, ids[selected_id], ctext, st.session_state.username)
                     if success:
                         st.success(message)
