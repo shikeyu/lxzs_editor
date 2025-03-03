@@ -167,6 +167,8 @@ def validate_string(s):
             else:
                 print(stack[-1])
                 return False
+        elif s[i] == ',':
+                return False
         elif s[i] == '}':
             if not stack or stack[-1] != '{':
                 return False
@@ -208,6 +210,7 @@ def display_text(intext):
     # 替换kzfdzb中的nkzf为对应的okzf
     for i in range(4):
         yw1 = yw1.replace(kzfdzb[i]["nkzf"], kzfdzb[i]["okzf"])
+    yw1 = yw1.replace("{FF}","\n{CC 00 00 00 }\n")
 
     allyw = yw1.split("\n")
     for ls in allyw:
