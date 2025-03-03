@@ -167,8 +167,6 @@ def validate_string(s):
             else:
                 print(stack[-1])
                 return False
-        elif s[i] == ',':
-                return False
         elif s[i] == '}':
             if not stack or stack[-1] != '{':
                 return False
