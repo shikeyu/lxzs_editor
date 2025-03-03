@@ -380,7 +380,11 @@ def edit_page():
     ids = [row['ID'] for row in data_id]
 
     if  'nowid' not in st.session_state:
-        st.session_state.nowid=0
+        st.session_state.nowid = 0
+    
+    # 自动替换标志
+    if  'need_replace' not in st.session_state:
+        st.session_state.need_replace = False
 
     # 通过滑动条选择记录行
     selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1, value=st.session_state.nowid,key="selected_id")
