@@ -303,8 +303,29 @@ def insert_message(username, message):
     conn.close()
 
 # 登录界面
+# 获取更新信息
+def get_update_info():
+    try:
+        conn = create_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT version, update_info FROM update_logs ORDER BY version DESC")
+        updates = cursor.fetchall()
+        
+        # 合并所有更新信息
+        update_text = ""
+        for update in updates:
+            update_text += f"Version {update['version']}:\n{update['update_info']}\n\n"
+        return update_text
+    except Error as e:
+        st.error(f"Error: {e}")
+        return "无法获取更新信息"
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
 def login_page():
-    st.title("流行之神脚本编辑系统")
+    st.title("流行之神脚本编辑系统 1.4")
     username = st.text_input("用户名")
     password = st.text_input("密码", type="password")
     if st.button("登录"):
@@ -317,6 +338,9 @@ def login_page():
         else:
             st.error("用户名或密码错误！！")
             time.sleep(2) 
+
+    # 显示更新信息
+    st.text_area("更新日志", value=get_update_info(), height=200, disabled=True)
 
 # 获取用户权限
 def get_user_permissions(username):
@@ -380,14 +404,12 @@ def edit_page():
     if  'nowid' not in st.session_state:
         st.session_state.nowid = 0
     
-    # 自动替换标志
-    if  'need_replace' not in st.session_state:
-        st.session_state.need_replace = False
-
     # 通过滑动条选择记录行
     selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1, value=st.session_state.nowid,key="selected_id")
     if st.session_state.nowid != selected_id:
         st.session_state.need_replace = False
+        if 'ctext' in st.session_state:
+            del st.session_state.ctext
     st.session_state.nowid=selected_id
     
    
@@ -421,14 +443,16 @@ def edit_page():
 
     #显示上下条目
     if button_up:
-        if st.session_state.nowid>=0:
+        if st.session_state.nowid>0:
             st.session_state.nowid -=1
-            st.session_state.need_replace = False
+            if 'ctext' in st.session_state:
+                del st.session_state.ctext
             st.rerun()
     if button_down:
         if st.session_state.nowid<len(ids) - 1:
             st.session_state.nowid +=1
-            st.session_state.need_replace = False
+            if 'ctext' in st.session_state:
+                del st.session_state.ctext
             st.rerun()
   
     # 向前查找字符串
@@ -439,7 +463,8 @@ def edit_page():
             found_id=get_id_up(table,ids[selected_id],search_text,'ctext')
         if found_id:
             st.session_state.nowid=ids.index(found_id)
-            st.session_state.need_replace = False
+            if 'ctext' in st.session_state:
+                del st.session_state.ctext
             st.rerun()
         
     #向后查找字符串
@@ -450,7 +475,8 @@ def edit_page():
             found_id=get_id_down(table,ids[selected_id],search_text,'ctext')
         if found_id:
             st.session_state.nowid=ids.index(found_id)
-            st.session_state.need_replace = False
+            if 'ctext' in st.session_state:
+                del st.session_state.ctext
             st.rerun()
     
 
@@ -461,6 +487,9 @@ def edit_page():
     record = data[0]
 
     if record:
+        if not ('ctext' in st.session_state):
+                st.session_state.ctext=record['ctext']
+        
         st.write("编号:", hex(record['ID']), "   编辑者:", record['editor'], "   更新时间:", record['update_time'])
         # 左右分两列
         s_left, s_right = st.columns(2, gap="small")
@@ -472,26 +501,30 @@ def edit_page():
 
         #查找替换字符串
         if do_replace and replace_text and search_text:
-            record['ctext']=record['ctext'].replace(search_text,replace_text)
-            st.session_state.need_replace = True
+            st.session_state.ctext=st.session_state.ctext.replace(search_text,replace_text)
             
-        ctext=record['ctext']
-
         # 编辑 ctext 字段
-        ctext = s_left.text_area("译文", value=record['ctext'], height=250, key="ctext")
+        st.session_state.ctext = s_left.text_area("译文", value=st.session_state.ctext, height=250)
            
-        vtext = s_right.text_area("模拟显示", value=display_text(ctext), height=500)
+        vtext = s_right.text_area("模拟显示", value=display_text(st.session_state.ctext), height=500)
+
+        # 显示文本转译文
+        if "{FF}" in st.session_state.ctext:
+            if s_right.button("文本转换"):
+                st.session_state.ctext=vtext.replace("\n","{FF}")
+                if st.session_state.ctext.endswith("{FF}"):
+                    st.session_state.ctext=st.session_state.ctext[:-4] # 移除最后4个字符
+                st.rerun()
+               
 
         if s_left.button("保存译文"):
             time.sleep(0.5)
-            if validate_string(ctext):
+            if validate_string(st.session_state.ctext):
                 with st.spinner('正在保存...'):
-                    if st.session_state.need_replace:
-                        ctext=ctext.replace(search_text,replace_text)
-                        st.session_state.need_replace = False 
-                    success, message = update_record(table, ids[selected_id], ctext, st.session_state.username)
+                    success, message = update_record(table, ids[selected_id],st.session_state.ctext, st.session_state.username)
                     if success:
                         st.success(message)
+                        del st.session_state.ctext
                         time.sleep(0.5)  # 给一点时间让数据库更新
                         st.rerun()
                     else:
