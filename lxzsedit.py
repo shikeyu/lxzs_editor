@@ -214,7 +214,7 @@ def display_text(intext):
     for ls in allyw:
         if ls.startswith("{"):
             if ls.startswith("{79"):  # 添加选择项
-                display_text += ls[19:] + "\n"
+                display_text += ls[19:-1] + "\n"
             elif ls.startswith("{23"):  # 添加未知项
               display_text += ls[10:-1] + "\n"
             elif ls.startswith("{D9"):  # 添加未知项
@@ -325,7 +325,7 @@ def get_update_info():
             conn.close()
 
 def login_page():
-    st.title("流行之神脚本编辑系统 1.4")
+    st.title("流行之神脚本编辑系统 1.5")
     username = st.text_input("用户名")
     password = st.text_input("密码", type="password")
     if st.button("登录"):
@@ -389,6 +389,65 @@ def table_selection_page():
             st.warning("请选择要打开的表")
 
 # 编辑界面
+# 检查记录锁定状态
+def check_lock(fname, record_id):
+    try:
+        conn = create_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(f"SELECT locked_by, locked_time FROM `{fname}` WHERE id = %s", (record_id,))
+        result = cursor.fetchone()
+        
+        if result['locked_by']:
+            # 检查锁定是否过期（30分钟后自动解锁）
+            if result['locked_time'] and (datetime.now() - result['locked_time']).total_seconds() > 1800:
+                release_lock(fname, record_id)
+                return None
+            return result['locked_by']
+        return None
+    except Error as e:
+        st.error(f"Error: {e}")
+        return None
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# 锁定记录
+def lock_record(fname, record_id, username):
+    try:
+        conn = create_connection()
+        cursor = conn.cursor()
+        now = datetime.now()
+        cursor.execute(f"UPDATE `{fname}` SET locked_by = %s, locked_time = %s WHERE id = %s", 
+                      (username, now, record_id))
+        conn.commit()
+        return True
+    except Error as e:
+        st.error(f"Error: {e}")
+        return False
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# 释放记录锁定
+def release_lock(fname, record_id):
+    try:
+        conn = create_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE `{fname}` SET locked_by = NULL, locked_time = NULL WHERE id = %s", 
+                      (record_id,))
+        conn.commit()
+        return True
+    except Error as e:
+        st.error(f"Error: {e}")
+        return False
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# 在edit_page函数中修改相关代码
 def edit_page():
     table = st.session_state.selected_table
     table_title = st.session_state.selected_tabletitle
@@ -427,6 +486,14 @@ def edit_page():
     search_up=s_up.button("向前查找")
     search_down=s_down.button("向后查找")
     Control_view=st.sidebar.checkbox("日文显示控制符", value=True)
+
+    # 添加返回按钮
+    if st.sidebar.button("返回选择界面"):
+        st.session_state.page = 'select_table'
+        del st.session_state.nowid
+        del st.session_state.selected_table
+        del st.session_state.ctext
+        st.rerun()
     
     # 获取所有留言及其跟帖
     #messages = get_messages_with_replies()
@@ -487,8 +554,16 @@ def edit_page():
     record = data[0]
 
     if record:
+        # 检查记录锁定状态
+        locked_by = check_lock(table, ids[selected_id])
+        if locked_by and locked_by != st.session_state.username:
+            st.warning(f"当前记录正在被用户 {locked_by} 编辑中，请稍后再试。")
+            return
+        elif not locked_by:
+            lock_record(table, ids[selected_id], st.session_state.username)
+            
         if not ('ctext' in st.session_state):
-                st.session_state.ctext=record['ctext']
+            st.session_state.ctext = record['ctext']
         
         st.write("编号:", hex(record['ID']), "   编辑者:", record['editor'], "   更新时间:", record['update_time'])
         # 左右分两列
@@ -521,17 +596,24 @@ def edit_page():
             time.sleep(0.5)
             if validate_string(st.session_state.ctext):
                 with st.spinner('正在保存...'):
-                    success, message = update_record(table, ids[selected_id],st.session_state.ctext, st.session_state.username)
+                    success, message = update_record(table, ids[selected_id], st.session_state.ctext, st.session_state.username)
                     if success:
+                        release_lock(table, ids[selected_id])  # 保存成功后释放锁定
                         st.success(message)
                         del st.session_state.ctext
-                        time.sleep(0.5)  # 给一点时间让数据库更新
+                        time.sleep(0.5)
                         st.rerun()
                     else:
                         st.error(message)
             else:
                 st.error('输入文本存在控制符错误，请检查！')
 
+        # 当用户切换到其他记录时释放锁定
+        if 'previous_id' not in st.session_state:
+            st.session_state.previous_id = selected_id
+        elif st.session_state.previous_id != selected_id:
+            release_lock(table, ids[st.session_state.previous_id])
+            st.session_state.previous_id = selected_id
 
 # 主程序
 def main():
@@ -549,6 +631,7 @@ def main():
         st.set_page_config(layout="wide")
         edit_page()
     else:
+        st.set_page_config(layout="centered")
         table_selection_page()
 if __name__ == '__main__':
     main()
