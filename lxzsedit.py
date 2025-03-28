@@ -230,6 +230,8 @@ def display_text(intext):
                 viewtext = ""
                 if ls == "{04 00 }":
                     display_text += viewtext + "\n"
+            if ls.startswith("{87"): #添加姓名编码
+                viewtext += ls
         elif not ls.startswith("#"):  #去除注释行
             viewtext += ls
 
@@ -325,22 +327,77 @@ def get_update_info():
             conn.close()
 
 def login_page():
-    st.title("流行之神脚本编辑系统 1.5")
+    st.title("流行之神脚本编辑系统 1.5.1")
     username = st.text_input("用户名")
     password = st.text_input("密码", type="password")
-    if st.button("登录"):
-        if validate_user(username, password):
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            update_last_login(username)
-            st.session_state.page = 'select_table'
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("登录"):
+            if validate_user(username, password):
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                update_last_login(username)
+                st.session_state.page = 'select_table'
+                st.rerun()
+            else:
+                st.error("用户名或密码错误！！")
+                time.sleep(2) 
+    with col2:
+        if st.button("修改密码"):
+            st.session_state.page = 'change_password'
             st.rerun()
-        else:
-            st.error("用户名或密码错误！！")
-            time.sleep(2) 
 
     # 显示更新信息
     st.text_area("更新日志", value=get_update_info(), height=200, disabled=True)
+
+# 密码修改界面
+def change_password_page():
+    st.title("修改密码")
+    username = st.text_input("用户名")
+    old_password = st.text_input("原密码", type="password")
+    new_password = st.text_input("新密码", type="password")
+    confirm_password = st.text_input("确认新密码", type="password")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("确认修改"):
+            if not username or not old_password or not new_password or not confirm_password:
+                st.error("请填写所有字段！")
+            elif new_password != confirm_password:
+                st.error("两次输入的新密码不一致！")
+            elif not validate_user(username, old_password):
+                st.error("用户名或原密码错误！")
+            else:
+                if update_password(username, new_password):
+                    st.success("密码修改成功！")
+                    time.sleep(2)
+                    st.session_state.page = 'login'
+                    st.rerun()
+                else:
+                    st.error("密码修改失败，请稍后重试！")
+    with col2:
+        if st.button("返回登录"):
+            st.session_state.page = 'login'
+            st.rerun()
+
+# 更新用户密码
+def update_password(username, new_password):
+    try:
+        conn = create_connection()
+        cursor = conn.cursor()
+        # 使用bcrypt加密新密码
+        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        cursor.execute("UPDATE Users SET password = %s WHERE username = %s", (hashed_password, username))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Error as e:
+        st.error(f"Error: {e}")
+        return False
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
 
 # 获取用户权限
 def get_user_permissions(username):
@@ -478,7 +535,7 @@ def edit_page():
           
     # 查找功能按钮
     search_text = st.sidebar.text_input("查找译文")
-    s_replace,s_rpbutton=st.sidebar.columns([0.77,0.23], gap="small")
+    s_replace,s_rpbutton=st.sidebar.columns([0.70,0.30], gap="small")
     replace_text = s_replace.text_input("替换为",label_visibility="collapsed")
     do_replace=s_rpbutton.button("替换")
     search_in=st.sidebar.radio("搜索范围",["原文","译文"],index=1,horizontal=1)
@@ -626,7 +683,10 @@ def main():
     if 'username' not in st.session_state:
         st.session_state.username = None
     if not st.session_state.logged_in:
-        login_page()
+        if st.session_state.page == 'change_password':
+            change_password_page()
+        else:
+            login_page()
     elif st.session_state.page == 'edit':
         st.set_page_config(layout="wide")
         edit_page()
