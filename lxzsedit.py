@@ -223,6 +223,8 @@ def display_text(intext):
                 viewtext += "风海"
             elif ls == "{D5 00 09 00 }":  # 添加姓名
                 viewtext += "纯也"
+            elif ls.startswith("{D5 00 "):  # 添加姓名
+                viewtext += ls
             elif ls.startswith("{D1 07"):  # 添加关键词
                 viewtext += ls
             elif ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }"]:
@@ -230,7 +232,7 @@ def display_text(intext):
                 viewtext = ""
                 if ls == "{04 00 }":
                     display_text += viewtext + "\n"
-            if ls.startswith("{87"): #添加姓名编码
+            if ls.startswith("{87}"): #添加姓名编码
                 viewtext += ls
         elif not ls.startswith("#"):  #去除注释行
             viewtext += ls
