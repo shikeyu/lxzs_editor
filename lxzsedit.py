@@ -537,13 +537,13 @@ def edit_page():
           
     # 查找功能按钮
     search_text = st.sidebar.text_input("查找译文")
-    s_replace,s_rpbutton=st.sidebar.columns([0.70,0.30], gap="small")
-    replace_text = s_replace.text_input("替换为",label_visibility="collapsed")
-    do_replace=s_rpbutton.button("替换")
     search_in=st.sidebar.radio("搜索范围",["原文","译文"],index=1,horizontal=1)
     s_up,s_down=st.sidebar.columns(2, gap="small")
     search_up=s_up.button("向前查找")
     search_down=s_down.button("向后查找")
+    s_replace,s_rpbutton=st.sidebar.columns([0.70,0.30], gap="small")
+    replace_text = s_replace.text_input("替换为",label_visibility="collapsed")
+    do_replace=s_rpbutton.button("替换")
     Control_view=st.sidebar.checkbox("日文显示控制符", value=True)
 
     # 添加返回按钮
