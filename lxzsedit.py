@@ -552,6 +552,7 @@ def edit_page():
         del st.session_state.nowid
         del st.session_state.selected_table
         del st.session_state.ctext
+        del st.session_state.previous_id
         st.rerun()
     
     # 获取所有留言及其跟帖
@@ -614,14 +615,13 @@ def edit_page():
 
     if record:
         # 检查记录锁定状态
-        locked_by = check_lock(table, ids[selected_id])
-        if locked_by and locked_by != st.session_state.username:
-            st.warning(f"当前记录正在被用户 {locked_by} 编辑中，请稍后再试。")
-            return
-        elif not locked_by:
-            lock_record(table, ids[selected_id], st.session_state.username)
-            
-        if not ('ctext' in st.session_state):
+        if not ('ctext' in st.session_state): #记录有变动才检查锁定
+            locked_by = check_lock(table, ids[selected_id])
+            if locked_by and locked_by != st.session_state.username:
+                st.warning(f"当前记录正在被用户 {locked_by} 编辑中，请稍后再试。")
+                return
+            elif not locked_by:
+                lock_record(table, ids[selected_id], st.session_state.username)
             st.session_state.ctext = record['ctext']
         
         st.write("编号:", hex(record['ID']), "   编辑者:", record['editor'], "   更新时间:", record['update_time'])
@@ -638,7 +638,7 @@ def edit_page():
             st.session_state.ctext=st.session_state.ctext.replace(search_text,replace_text)
             
         # 编辑 ctext 字段
-        st.session_state.ctext = s_left.text_area("译文", value=st.session_state.ctext, height=250)
+        st.session_state.newctext = s_left.text_area("译文", value=st.session_state.ctext, height=250)
            
         vtext = s_right.text_area("模拟显示", value=display_text(st.session_state.ctext), height=500)
 
@@ -653,9 +653,9 @@ def edit_page():
 
         if s_left.button("保存译文"):
             time.sleep(0.5)
-            if validate_string(st.session_state.ctext):
+            if validate_string(st.session_state.newctext):
                 with st.spinner('正在保存...'):
-                    success, message = update_record(table, ids[selected_id], st.session_state.ctext, st.session_state.username)
+                    success, message = update_record(table, ids[selected_id], st.session_state.newctext, st.session_state.username)
                     if success:
                         release_lock(table, ids[selected_id])  # 保存成功后释放锁定
                         st.success(message)
