@@ -329,7 +329,7 @@ def get_update_info():
             conn.close()
 
 def login_page():
-    st.title("流行之神脚本编辑系统 1.5.1")
+    st.title("流行之神脚本编辑系统 1.5.2")
     username = st.text_input("用户名")
     password = st.text_input("密码", type="password")
     col1, col2 = st.columns(2)
@@ -623,6 +623,8 @@ def edit_page():
             elif not locked_by:
                 lock_record(table, ids[selected_id], st.session_state.username)
             st.session_state.ctext = record['ctext']
+            if 'temp_text' in st.session_state:
+                del st.session_state.temp_text
         
         st.write("编号:", hex(record['ID']), "   编辑者:", record['editor'], "   更新时间:", record['update_time'])
         # 左右分两列
@@ -640,7 +642,10 @@ def edit_page():
         # 编辑 ctext 字段
         st.session_state.newctext = s_left.text_area("译文", value=st.session_state.ctext, height=250)
            
-        vtext = s_right.text_area("模拟显示", value=display_text(st.session_state.ctext), height=500)
+        if ('temp_text' in st.session_state): #如果存在输入的译文
+            vtext = s_right.text_area("临时翻译文本", value=st.session_state.temp_text, height=500)
+        else:
+            vtext = s_right.text_area("模拟显示（也可用于存放临时翻译文本）", value=display_text(st.session_state.ctext), height=500)
 
         # 显示文本转译文
         if "{FF}" in st.session_state.ctext:
@@ -649,7 +654,16 @@ def edit_page():
                 if st.session_state.ctext.endswith("{FF}"):
                     st.session_state.ctext=st.session_state.ctext[:-4] # 移除最后4个字符
                 st.rerun()
-               
+
+        # 显示文本转添加[ENTER]
+        if "[ENTER]" in st.session_state.ctext:
+            if s_right.button("添加换行符"):
+                if "[ENTER]" in vtext:
+                    st.session_state.temp_text=vtext.replace("\n[ENTER]\n","\n")
+                else:
+                    temp_text=vtext.replace("\n","\n[ENTER]\n")
+                    st.session_state.temp_text=temp_text.replace("[ENTER]\n\n[ENTER]","")
+                st.rerun()               
 
         if s_left.button("保存译文"):
             time.sleep(0.5)
@@ -660,6 +674,8 @@ def edit_page():
                         release_lock(table, ids[selected_id])  # 保存成功后释放锁定
                         st.success(message)
                         del st.session_state.ctext
+                        if 'temp_text' in st.session_state:
+                            del st.session_state.temp_text
                         time.sleep(0.5)
                         st.rerun()
                     else:
