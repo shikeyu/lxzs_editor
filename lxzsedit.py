@@ -531,9 +531,20 @@ def edit_page():
     st.session_state.nowid=selected_id
     
    
-    b_up,b_down=st.sidebar.columns(2, gap="small")
-    button_up=b_up.button("上一条")
-    button_down=b_down.button("下一条")
+    b_up,b_down,b_input_id,b_goto=st.sidebar.columns(4, gap="small")
+    button_up=b_up.button("＜＜")
+    button_down=b_down.button("＞＞")
+    input_id=b_input_id.number_input("", min_value=0, max_value=len(ids) - 1, value="min",label_visibility="collapsed")
+    button_goto=b_goto.button("转到")
+    
+    # 跳转到指定记录
+    if button_goto:
+        if input_id >= 0 and input_id <= len(ids) - 1 and input_id != st.session_state.nowid:
+            st.session_state.nowid=input_id
+            if 'ctext' in st.session_state:
+                del st.session_state.ctext
+            st.rerun()
+
           
     # 查找功能按钮
     search_text = st.sidebar.text_input("查找译文")
