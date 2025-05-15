@@ -242,6 +242,120 @@ def display_text(intext):
 
     return display_text
 
+
+def script_replace(jtext, vtext):
+    """
+    将jtext的值用display_text函数除去控制符，然后去除不含字符的空行后放入sour数组，
+    再将vtext的值去除空行后放入dest数组，判断两个数组的长度，
+    长度相同进行后续替换操作。将jtext的值逐条用sour中的值替换为dest对应的值，然后返回。
+    
+    参数:
+        jtext (str): 原始日文文本，包含控制符
+        vtext (str): 译文，不包含控制符
+        
+    返回:
+        tuple: (成功标志, 结果文本或错误信息)
+    """
+    import streamlit as st
+    import re
+    
+    # 使用display_text函数处理jtext以去除控制符
+    cleaned_jtext = display_text(jtext)
+    
+    # 将处理后的jtext按行分割并去除空行，存入sour数组
+    sour = [line for line in cleaned_jtext.split('\n') if line.strip()]
+    
+    # 将vtext按行分割并去除空行，存入dest数组
+    dest = [line for line in vtext.split('\n') if line.strip()]
+    
+    # 判断两个数组的长度是否相同
+    if len(sour) != len(dest):
+        return False, f"源文本行数({len(sour)})与译文行数({len(dest)})不匹配，无法进行替换。"
+        
+    # 显示调试信息
+    with st.expander("替换详情"):
+        st.write(f"源文本行数: {len(sour)}")
+        st.write(f"译文行数: {len(dest)}")
+        st.write("源文本与译文对照:")
+        for i in range(len(sour)):
+            st.write(f"源文本[{i}]: {sour[i]}")
+            st.write(f"译文[{i}]: {dest[i]}")
+            st.write("---")
+    
+    # 获取原始jtext中的所有控制符和文本
+    # 提取控制符和文本内容
+    pattern = r'(\{[^\}]+\}|[^\{]+)'
+    tokens = re.findall(pattern, jtext)
+    
+    # 创建映射表，将清理后的文本映射到原始文本
+    text_mapping = {}
+    for i, line in enumerate(sour):
+        text_mapping[line] = dest[i]
+    
+    # 处理每个token，如果是文本且在映射表中，则替换
+    result = ""
+    for token in tokens:
+        if token.startswith('{') and token.endswith('}'): 
+            # 这是控制符，保持不变
+            result += token
+        else:
+            # 这是文本，检查是否需要替换
+            # 先检查完整token是否在映射表中
+            token_stripped = token.strip()
+            if token_stripped and token_stripped in text_mapping:
+                # 保持原始的前导和尾随空白
+                leading_spaces = ""
+                trailing_spaces = ""
+                
+                # 计算前导空白
+                for char in token:
+                    if char.isspace():
+                        leading_spaces += char
+                    else:
+                        break
+                        
+                # 计算尾随空白
+                for char in reversed(token):
+                    if char.isspace():
+                        trailing_spaces = char + trailing_spaces
+                    else:
+                        break
+                        
+                result += leading_spaces + text_mapping[token_stripped] + trailing_spaces
+            else:
+                # 如果完整token不在映射表中，尝试按行分割并逐行替换
+                lines = token.split('\n')
+                processed_lines = []
+                
+                for line in lines:
+                    line_stripped = line.strip()
+                    if line_stripped and line_stripped in text_mapping:
+                        # 保持原始的前导和尾随空白
+                        leading_spaces = ""
+                        trailing_spaces = ""
+                        
+                        # 计算前导空白
+                        for char in line:
+                            if char.isspace():
+                                leading_spaces += char
+                            else:
+                                break
+                                
+                        # 计算尾随空白
+                        for char in reversed(line):
+                            if char.isspace():
+                                trailing_spaces = char + trailing_spaces
+                            else:
+                                break
+                                
+                        processed_lines.append(leading_spaces + text_mapping[line_stripped] + trailing_spaces)
+                    else:
+                        processed_lines.append(line)
+                        
+                result += '\n'.join(processed_lines)
+    
+    return True, result
+
 # 获取所有留言及其跟帖
 def get_messages_with_replies():
     conn = create_connection()
@@ -329,7 +443,7 @@ def get_update_info():
             conn.close()
 
 def login_page():
-    st.title("流行之神脚本编辑系统 1.5.2")
+    st.title("流行之神脚本编辑系统 1.6")
     username = st.text_input("用户名")
     password = st.text_input("密码", type="password")
     col1, col2 = st.columns(2)
@@ -668,13 +782,15 @@ def edit_page():
 
         # 显示文本转添加[ENTER]
         if "[ENTER]" in st.session_state.ctext:
-            if s_right.button("添加换行符"):
-                if "[ENTER]" in vtext:
-                    st.session_state.temp_text=vtext.replace("\n[ENTER]\n","\n")
+        # 脚本替换功能
+            if s_right.button("脚本替换"):
+                success, result = script_replace(record['jtext'], vtext)
+                if success:
+                    st.session_state.ctext = result
+                    st.success("脚本替换成功！")
+                    st.rerun()
                 else:
-                    temp_text=vtext.replace("\n","\n[ENTER]\n")
-                    st.session_state.temp_text=temp_text.replace("[ENTER]\n\n[ENTER]","")
-                st.rerun()               
+                    st.error(result)
 
         if s_left.button("保存译文"):
             time.sleep(0.5)
