@@ -227,7 +227,7 @@ def display_text(intext):
                 viewtext += ls
             elif ls.startswith("{D1 07"):  # 添加关键词
                 viewtext += ls
-            elif ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }", "{75 00 }"]:
+            elif (ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }", "{75 00 }"]) or ls.startswith("{CC 00 ") :
                 display_text += viewtext + "\n"
                 viewtext = ""
                 if ls == "{04 00 }":
