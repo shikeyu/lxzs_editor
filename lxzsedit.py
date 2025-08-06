@@ -227,7 +227,7 @@ def display_text(intext):
                 viewtext += ls
             elif ls.startswith("{D1 07"):  # 添加关键词
                 viewtext += ls
-            elif (ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }", "{75 00 }"]) or ls.startswith("{CC 00 ") :
+            elif (ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }", "{75 00 }"]) or ls.startswith("{CC 00 ") or ls.startswith("{75 00 ") :
                 display_text += viewtext + "\n"
                 viewtext = ""
                 if ls == "{04 00 }":
@@ -781,7 +781,7 @@ def edit_page():
                 st.rerun()
 
         # 显示文本转添加[ENTER]
-        if "[ENTER]" in st.session_state.ctext:
+        if "{03 00 " in st.session_state.ctext:
         # 脚本替换功能
             if s_right.button("脚本替换"):
                 success, result = script_replace(record['jtext'], vtext)
