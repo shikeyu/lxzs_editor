@@ -119,7 +119,8 @@ def get_table_data(fname,id):
     try:
         conn = create_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute(f"SELECT * FROM `{fname}` where ID='{id}'")
+        query = f"SELECT * FROM `{fname}` WHERE ID = %s"
+        cursor.execute(query, (id,))
         result = cursor.fetchall()
         return result
     except Error as e:
@@ -646,10 +647,10 @@ def edit_page():
     
    
     b_up,b_down,b_input_id,b_goto=st.sidebar.columns(4, gap="small")
-    button_up=b_up.button("＜＜")
-    button_down=b_down.button("＞＞")
+    button_up=b_up.button("◀️", help="上一条记录")
+    button_down=b_down.button("▶️", help="下一条记录")
     input_id=b_input_id.number_input("", min_value=0, max_value=len(ids) - 1, value="min",label_visibility="collapsed")
-    button_goto=b_goto.button("转到")
+    button_goto=b_goto.button("🎯", help="跳转")
     
     # 跳转到指定记录
     if button_goto:
@@ -840,4 +841,5 @@ def main():
         table_selection_page()
 if __name__ == '__main__':
     main()
+
 
