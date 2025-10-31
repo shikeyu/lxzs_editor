@@ -649,7 +649,8 @@ def edit_page():
     b_up,b_down,b_input_id,b_goto=st.sidebar.columns(4, gap="small")
     button_up=b_up.button("◀️", help="上一条记录")
     button_down=b_down.button("▶️", help="下一条记录")
-    input_id=b_input_id.number_input("", min_value=0, max_value=len(ids) - 1, value=0, label_visibility="collapsed")
+    current_value = st.session_state.nowid if 0 <= st.session_state.nowid < len(ids) else 0
+    input_id=b_input_id.number_input("", min_value=0, max_value=len(ids) - 1, value=current_value, label_visibility="collapsed")
     button_goto=b_goto.button("🎯", help="跳转")
     
     # 跳转到指定记录
@@ -841,6 +842,7 @@ def main():
         table_selection_page()
 if __name__ == '__main__':
     main()
+
 
 
 
