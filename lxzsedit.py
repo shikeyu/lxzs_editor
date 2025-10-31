@@ -637,7 +637,7 @@ def edit_page():
         st.session_state.nowid = 0
     
     # 通过滑动条选择记录行
-    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1, value=st.session_state.nowid,key="selected_id")
+    selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1, value=st.session_state.nowid)
     if st.session_state.nowid != selected_id:
         st.session_state.need_replace = False
         if 'ctext' in st.session_state:
@@ -840,3 +840,4 @@ def main():
         table_selection_page()
 if __name__ == '__main__':
     main()
+
