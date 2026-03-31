@@ -84,32 +84,34 @@ def get_table_id(fname):
 # 向前查找包含指定字符的数据ID
 def get_id_up(fname,s_id,s_text,f_text):
     try:
-        with create_connection() as conn:
-            cursor = conn.cursor(dictionary=True)
-            query = f"SELECT max(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE %s AND ID < %s"
-            cursor.execute(query, (f"%{s_text}%", s_id))
-            result = cursor.fetchone()
-            return result['get_id'] if result else None
+        conn = create_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = f"SELECT max(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE %s AND ID < %s"
+        cursor.execute(query, (f"%{s_text}%", s_id))
+        result = cursor.fetchone()
+        return result['get_id'] if result else None
     except Error as e:
         st.error("查找过程中出错。")
         return None
-        if conn.is_connected():
+    finally:
+        if 'conn' in locals() and conn.is_connected():
             cursor.close()
             conn.close()
             
 # 向后查找包含指定字符的数据ID
 def get_id_down(fname, s_id, s_text, f_text):
     try:
-        with create_connection() as conn:
-            cursor = conn.cursor(dictionary=True)
-            query = f"SELECT min(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE %s AND ID > %s"
-            cursor.execute(query, (f"%{s_text}%", s_id))
-            result = cursor.fetchone()
-            return result['get_id'] if result else None
+        conn = create_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = f"SELECT min(ID) as get_id FROM `{fname}` WHERE `{f_text}` LIKE %s AND ID > %s"
+        cursor.execute(query, (f"%{s_text}%", s_id))
+        result = cursor.fetchone()
+        return result['get_id'] if result else None
     except Error as e:
         st.error("查找过程中出错。")
         return None
-        if conn.is_connected():
+    finally:
+        if 'conn' in locals() and conn.is_connected():
             cursor.close()
             conn.close()
             
@@ -212,6 +214,8 @@ def display_text(intext):
     yw1 = yw1.replace("{FF}","\n{CC 00 00 00 }\n")
 
     allyw = yw1.split("\n")
+    # 为了防止行级错乱，我们需要根据 {03...} 和 {04...} 来进行分组提取
+    # 但 display_text 原本是将整个文本返回。
     for ls in allyw:
         if ls.startswith("{"):
             if ls.startswith("{79"):  # 添加选择项
@@ -225,16 +229,25 @@ def display_text(intext):
             elif ls == "{D5 00 09 00 }":  # 添加姓名
                 viewtext += "纯也"
             elif ls.startswith("{D5 00 "):  # 添加姓名
-                viewtext += ls
+                viewtext += "{D5}" # 简化控制符
             elif ls.startswith("{D1 07"):  # 添加关键词
-                viewtext += ls
-            elif (ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }", "{75 00 }"]) or ls.startswith("{CC 00 ") or ls.startswith("{75 00 ") :
+                viewtext += "{D1}" # 简化控制符
+            elif ls.startswith("{CD "):  # 特殊属性控制符起始
+                viewtext += "{CD}" # 简化控制符
+            elif ls.startswith("{CE "):  # 特殊属性控制符结束
+                viewtext += "{CE}" # 简化控制符
+            elif (ls in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }", "{75 00 }"]) or ls.startswith("{CC 00 ") or ls.startswith("{75 00 ") or ls.startswith("{03 "):
+                # 当遇到翻页符 {04...} 或者 对话分组符 {03...} 时，强制结束当前 viewtext 的合并并换行
                 display_text += viewtext + "\n"
                 viewtext = ""
-                if ls == "{04 00 }":
+                if ls.startswith("{04 ") or ls.startswith("{03 "):
                     display_text += viewtext + "\n"
-            if ls.startswith("{87}"): #添加姓名编码
+            elif ls.startswith("{87}"): #添加姓名编码
                 viewtext += ls
+            else:
+                # 其他未识别的控制符，为了避免丢失导致分段错误，我们将其转换为一个占位符，
+                # 这样它可以被提取并被AI看到，同时也能保持 tokens 的行级对应关系
+                pass
         elif not ls.startswith("#"):  #去除注释行
             viewtext += ls
 
@@ -260,101 +273,179 @@ def script_replace(jtext, vtext):
     import streamlit as st
     import re
     
-    # 使用display_text函数处理jtext以去除控制符
-    cleaned_jtext = display_text(jtext)
-    
-    # 将处理后的jtext按行分割并去除空行，存入sour数组
-    sour = [line for line in cleaned_jtext.split('\n') if line.strip()]
-    
     # 将vtext按行分割并去除空行，存入dest数组
-    dest = [line for line in vtext.split('\n') if line.strip()]
+    dest = [line.strip() for line in vtext.split('\n') if line.strip()]
     
-    # 判断两个数组的长度是否相同
-    if len(sour) != len(dest):
-        return False, f"源文本行数({len(sour)})与译文行数({len(dest)})不匹配，无法进行替换。"
-        
-    # 显示调试信息
-    with st.expander("替换详情"):
-        st.write(f"源文本行数: {len(sour)}")
-        st.write(f"译文行数: {len(dest)}")
-        st.write("源文本与译文对照:")
-        for i in range(len(sour)):
-            st.write(f"源文本[{i}]: {sour[i]}")
-            st.write(f"译文[{i}]: {dest[i]}")
-            st.write("---")
+    # 严格按照控制符拆分 jtext。偶数索引为纯文本（可能含空白），奇数索引为控制符。
+    tokens = re.split(r'(\{[^\{\}]+\})', jtext)
     
-    # 获取原始jtext中的所有控制符和文本
-    # 提取控制符和文本内容
-    pattern = r'(\{[^\}]+\}|[^\{]+)'
-    tokens = re.findall(pattern, jtext)
+    # 模拟 display_text 的逻辑，将 tokens 分组为“逻辑行”
+    logical_lines = []
+    current_line = []
     
-    # 创建映射表，将清理后的文本映射到原始文本
-    text_mapping = {}
-    for i, line in enumerate(sour):
-        text_mapping[line] = dest[i]
-    
-    # 处理每个token，如果是文本且在映射表中，则替换
-    result = ""
-    for token in tokens:
-        if token.startswith('{') and token.endswith('}'): 
-            # 这是控制符，保持不变
-            result += token
-        else:
-            # 这是文本，检查是否需要替换
-            # 先检查完整token是否在映射表中
-            token_stripped = token.strip()
-            if token_stripped and token_stripped in text_mapping:
-                # 保持原始的前导和尾随空白
-                leading_spaces = ""
-                trailing_spaces = ""
-                
-                # 计算前导空白
-                for char in token:
-                    if char.isspace():
-                        leading_spaces += char
-                    else:
-                        break
-                        
-                # 计算尾随空白
-                for char in reversed(token):
-                    if char.isspace():
-                        trailing_spaces = char + trailing_spaces
-                    else:
-                        break
-                        
-                result += leading_spaces + text_mapping[token_stripped] + trailing_spaces
+    for i, token in enumerate(tokens):
+        if i % 2 == 1: # 控制符
+            if token.startswith("{79") or token.startswith("{23"):
+                if current_line:
+                    logical_lines.append(current_line)
+                    current_line = []
+                logical_lines.append([i])
+            elif (token in ["{CC 00 00 00 }", "{CC 00 01 00 }", "{04 00 }", "{69 00 }", "{75 00 }"] or 
+                  token.startswith("{CC 00 ") or token.startswith("{75 00 ") or token.startswith("{03 ")):
+                if current_line:
+                    logical_lines.append(current_line)
+                    current_line = []
             else:
-                # 如果完整token不在映射表中，尝试按行分割并逐行替换
-                lines = token.split('\n')
-                processed_lines = []
+                current_line.append(i)
+        else: # 纯文本
+            current_line.append(i)
+            
+    if current_line:
+        logical_lines.append(current_line)
+
+    # 过滤出真正产生可见文本的逻辑行
+    valid_logical_lines = []
+    for ll in logical_lines:
+        viewtext = ""
+        for i in ll:
+            token = tokens[i]
+            if i % 2 == 1:
+                if token.startswith("{79"): viewtext += token[19:-1]
+                elif token.startswith("{23"): viewtext += token[10:-1]
+                elif token.startswith("{D9"): viewtext += "＃"
+                elif token == "{D5 00 08 00 }": viewtext += "风海"
+                elif token == "{D5 00 09 00 }": viewtext += "纯也"
+                elif token.startswith("{D5 00 "): viewtext += "{D5}"
+                elif token.startswith("{D1 07"): viewtext += "{D1}"
+                elif token.startswith("{CD "): viewtext += "{CD}"
+                elif token.startswith("{CE "): viewtext += "{CE}"
+                elif token.startswith("{87}"): viewtext += token
+            else:
+                lines = token.replace("\r\n", "\n").split("\n")
+                for ls in lines:
+                    if not ls.startswith("#"):
+                        viewtext += ls
+        if viewtext.strip():
+            valid_logical_lines.append(ll)
+
+    # 判断有效行数是否与译文行数一致
+    if len(valid_logical_lines) != len(dest):
+        # 为了调试和查看，我们可以把解析出来的原文行打印出来
+        sour_preview = []
+        for ll in valid_logical_lines:
+            viewtext = ""
+            for i in ll:
+                token = tokens[i]
+                if i % 2 == 1:
+                    if token.startswith("{79"): viewtext += token[19:-1]
+                    elif token.startswith("{23"): viewtext += token[10:-1]
+                    elif token.startswith("{D9"): viewtext += "＃"
+                    elif token == "{D5 00 08 00 }": viewtext += "风海"
+                    elif token == "{D5 00 09 00 }": viewtext += "纯也"
+                    elif token.startswith("{D5 00 "): viewtext += "{D5}"
+                    elif token.startswith("{D1 07"): viewtext += "{D1}"
+                    elif token.startswith("{CD "): viewtext += "{CD}"
+                    elif token.startswith("{CE "): viewtext += "{CE}"
+                    elif token.startswith("{87}"): viewtext += token
+                else:
+                    lines = token.replace("\r\n", "\n").split("\n")
+                    for ls in lines:
+                        if not ls.startswith("#"):
+                            viewtext += ls
+            sour_preview.append(viewtext.strip())
+            
+        with st.expander("替换详情 - 行数不匹配"):
+            st.write(f"原文有效行数: {len(valid_logical_lines)}")
+            st.write(f"译文有效行数: {len(dest)}")
+            for idx, s in enumerate(sour_preview):
+                st.write(f"原文[{idx}]: {s}")
+            for idx, d in enumerate(dest):
+                if idx < len(dest):
+                    st.write(f"译文[{idx}]: {d}")
                 
-                for line in lines:
-                    line_stripped = line.strip()
-                    if line_stripped and line_stripped in text_mapping:
-                        # 保持原始的前导和尾随空白
-                        leading_spaces = ""
-                        trailing_spaces = ""
-                        
-                        # 计算前导空白
-                        for char in line:
-                            if char.isspace():
-                                leading_spaces += char
-                            else:
-                                break
-                                
-                        # 计算尾随空白
-                        for char in reversed(line):
-                            if char.isspace():
-                                trailing_spaces = char + trailing_spaces
-                            else:
-                                break
-                                
-                        processed_lines.append(leading_spaces + text_mapping[line_stripped] + trailing_spaces)
-                    else:
-                        processed_lines.append(line)
-                        
-                result += '\n'.join(processed_lines)
+        return False, f"有效源文本行数({len(valid_logical_lines)})与译文行数({len(dest)})不匹配，无法进行精确替换。"
+
+    # 执行替换
+    inline_tags_pattern = r'(\{D5\}|\{D1\}|\{CD\}|\{CE\})'
     
+    for ll, dest_line in zip(valid_logical_lines, dest):
+        dest_parts = re.split(inline_tags_pattern, dest_line)
+        dest_text_fragments = [p for p in dest_parts if p not in ['{D5}', '{D1}', '{CD}', '{CE}']]
+        
+        # 将逻辑行按行内控制符划分为多个片段
+        segments = []
+        current_seg = []
+        for i in ll:
+            if i % 2 == 1:
+                token = tokens[i]
+                is_inline = False
+                if token.startswith("{D5 00 ") or token == "{D5 00 08 00 }" or token == "{D5 00 09 00 }":
+                    is_inline = True
+                elif token.startswith("{D1 07"):
+                    is_inline = True
+                elif token.startswith("{CD "):
+                    is_inline = True
+                elif token.startswith("{CE "):
+                    is_inline = True
+                    
+                if is_inline:
+                    segments.append(current_seg)
+                    current_seg = []
+                else:
+                    current_seg.append(i)
+            else:
+                current_seg.append(i)
+        segments.append(current_seg)
+        
+        # 如果 AI 破坏了行内控制符结构，导致片段数不一致，则进行降级回填
+        if len(segments) != len(dest_text_fragments):
+            fallback_text = re.sub(inline_tags_pattern, '', dest_line)
+            dest_text_fragments = [fallback_text] + [''] * (len(segments) - 1)
+            
+        # 将译文片段填充回对应的片段中
+        for seg, trans_frag in zip(segments, dest_text_fragments):
+            best_idx = -1
+            max_len = -1
+            # 找到包含最多有效字符的文本块来承载译文
+            for idx in seg:
+                if idx % 2 == 0:
+                    orig_text = tokens[idx]
+                    m = re.match(r'^(\s*)(.*?)(\s*)$', orig_text, re.DOTALL)
+                    if m:
+                        core_len = len(m.group(2))
+                        if core_len > max_len:
+                            max_len = core_len
+                            best_idx = idx
+            
+            # 如果没有找到任何可见字符，就随便选最后一个纯文本块
+            if best_idx == -1:
+                for idx in reversed(seg):
+                    if idx % 2 == 0:
+                        best_idx = idx
+                        break
+                        
+            if best_idx != -1:
+                for idx in seg:
+                    if idx % 2 == 0:
+                        orig_text = tokens[idx]
+                        m = re.match(r'^(\s*)(.*?)(\s*)$', orig_text, re.DOTALL)
+                        if m:
+                            leading = m.group(1)
+                            trailing = m.group(3)
+                            if idx == best_idx:
+                                tokens[idx] = leading + trans_frag + trailing
+                            else:
+                                tokens[idx] = leading + "" + trailing
+            else:
+                # 应对片段中全是控制符的情况（例如 {79} 标签本身）
+                for idx in seg:
+                    token = tokens[idx]
+                    if token.startswith("{79"):
+                        tokens[idx] = token[:19] + trans_frag + token[-1:]
+                    elif token.startswith("{23"):
+                        tokens[idx] = token[:10] + trans_frag + token[-1:]
+
+    result = "".join(tokens)
     return True, result
 
 # 获取所有留言及其跟帖
@@ -422,7 +513,7 @@ def insert_message(username, message):
     conn.close()
 
 # 登录界面
-# 获取更新信息
+# 获取更新信息和最大版本号
 def get_update_info():
     try:
         conn = create_connection()
@@ -430,21 +521,28 @@ def get_update_info():
         cursor.execute("SELECT version, update_info FROM update_logs ORDER BY version DESC")
         updates = cursor.fetchall()
         
+        if not updates:
+            return "无法获取更新信息", "1.0"
+            
+        # 获取最大版本号
+        max_version = updates[0]['version']
+        
         # 合并所有更新信息
         update_text = ""
         for update in updates:
             update_text += f"Version {update['version']}:\n{update['update_info']}\n\n"
-        return update_text
+        return update_text, max_version
     except Error as e:
         st.error(f"Error: {e}")
-        return "无法获取更新信息"
+        return "无法获取更新信息", "1.0"
     finally:
         if conn.is_connected():
             cursor.close()
             conn.close()
 
 def login_page():
-    st.title("流行之神脚本编辑系统 1.6")
+    update_text, current_version = get_update_info()
+    st.title(f"流行之神脚本编辑系统 {current_version}")
     username = st.text_input("用户名")
     password = st.text_input("密码", type="password")
     col1, col2 = st.columns(2)
@@ -465,7 +563,7 @@ def login_page():
             st.rerun()
 
     # 显示更新信息
-    st.text_area("更新日志", value=get_update_info(), height=200, disabled=True)
+    st.text_area("更新日志", value=update_text, height=200, disabled=True)
 
 # 密码修改界面
 def change_password_page():
@@ -540,6 +638,16 @@ def get_user_permissions(username):
 # 表选择界面
 def table_selection_page():
     st.title("请选择要修改的文本库")
+    
+    # 侧边栏：管理工具（仅 admin 可见）
+    if st.session_state.get('username') == 'admin':
+        st.sidebar.title("管理工具")
+        if st.sidebar.button("AI 翻译配置"):
+            st.session_state.page = 'ai_settings'
+            st.rerun()
+        if st.sidebar.button("用户管理"):
+            st.session_state.page = 'user_admin'
+            st.rerun()
     
     # 获取当前用户有权限的表
     user_tables = get_user_permissions(st.session_state.username)
@@ -623,6 +731,9 @@ def release_lock(fname, record_id):
 
 # 在edit_page函数中修改相关代码
 def edit_page():
+    from ai_translation import call_dashscope_api, get_glossary, get_cached_translation, set_cached_translation
+    import hashlib
+    
     table = st.session_state.selected_table
     table_title = st.session_state.selected_tabletitle
     st.title(f"当前数据为: {table_title}")
@@ -636,7 +747,7 @@ def edit_page():
 
     if  'nowid' not in st.session_state:
         st.session_state.nowid = 0
-    
+
     # 通过滑动条选择记录行
     selected_id = st.sidebar.slider("滑动滚动条选择记录", min_value=0, max_value=len(ids) - 1, value=st.session_state.nowid)
     if st.session_state.nowid != selected_id:
@@ -649,8 +760,7 @@ def edit_page():
     b_up,b_down,b_input_id,b_goto=st.sidebar.columns(4, gap="small")
     button_up=b_up.button("◀️", help="上一条记录")
     button_down=b_down.button("▶️", help="下一条记录")
-    current_value = st.session_state.nowid if 0 <= st.session_state.nowid < len(ids) else 0
-    input_id=b_input_id.number_input("", min_value=0, max_value=len(ids) - 1, value=current_value, label_visibility="collapsed")
+    input_id=b_input_id.number_input("", min_value=0, max_value=len(ids) - 1, value=0, label_visibility="collapsed")
     button_goto=b_goto.button("🎯", help="跳转")
     
     # 跳转到指定记录
@@ -666,8 +776,8 @@ def edit_page():
     search_text = st.sidebar.text_input("查找译文")
     search_in=st.sidebar.radio("搜索范围",["原文","译文"],index=1,horizontal=1)
     s_up,s_down=st.sidebar.columns(2, gap="small")
-    search_up=s_up.button("向前查找")
-    search_down=s_down.button("向后查找")
+    search_up=s_up.button("◀️向前查找")
+    search_down=s_down.button("向后查找▶️")
     s_replace,s_rpbutton=st.sidebar.columns([0.70,0.30], gap="small")
     replace_text = s_replace.text_input("替换为",label_visibility="collapsed")
     do_replace=s_rpbutton.button("替换")
@@ -675,11 +785,21 @@ def edit_page():
 
     # 添加返回按钮
     if st.sidebar.button("返回选择界面"):
+        # 返回前释放当前记录的锁定
+        if 'previous_id' in st.session_state:
+            release_lock(table, ids[st.session_state.previous_id])
         st.session_state.page = 'select_table'
         del st.session_state.nowid
         del st.session_state.selected_table
-        del st.session_state.ctext
-        del st.session_state.previous_id
+        if 'ctext' in st.session_state:
+            del st.session_state.ctext
+        if 'previous_id' in st.session_state:
+            del st.session_state.previous_id
+        st.rerun()
+        
+    st.sidebar.divider()
+    if st.sidebar.button("📝 管理本表词汇"):
+        st.session_state.page = 'glossary_mgmt'
         st.rerun()
     
     # 获取所有留言及其跟帖
@@ -769,14 +889,22 @@ def edit_page():
         # 编辑 ctext 字段
         st.session_state.newctext = s_left.text_area("译文", value=st.session_state.ctext, height=250)
            
-        if ('temp_text' in st.session_state): #如果存在输入的译文
-            vtext = s_right.text_area("临时翻译文本", value=st.session_state.temp_text, height=500)
-        else:
-            vtext = s_right.text_area("模拟显示（也可用于存放临时翻译文本）", value=display_text(st.session_state.ctext), height=500)
+        if ('temp_text' not in st.session_state): #初始化临时译文
+            st.session_state.temp_text = display_text(st.session_state.ctext)
+            
+        vtext = s_right.text_area("模拟显示（也可用于存放临时翻译文本）", value=st.session_state.temp_text, height=500)
+        # 将用户编辑后的文本同步回 session_state
+        if vtext != st.session_state.temp_text:
+            st.session_state.temp_text = vtext
 
+        # 在右侧面板底部放置并排按钮
+        st.markdown("---")
+        # 创建两列用于并排放置按钮
+        btn_col1, btn_col2 = s_right.columns(2)
+        
         # 显示文本转译文
         if "{FF}" in st.session_state.ctext:
-            if s_right.button("文本转换"):
+            if btn_col1.button("文本转换"):
                 st.session_state.ctext=vtext.replace("\n","{FF}")
                 if st.session_state.ctext.endswith("{FF}"):
                     st.session_state.ctext=st.session_state.ctext[:-4] # 移除最后4个字符
@@ -785,7 +913,7 @@ def edit_page():
         # 显示文本转添加[ENTER]
         if "{03 00 " in st.session_state.ctext:
         # 脚本替换功能
-            if s_right.button("脚本替换"):
+            if btn_col1.button("脚本替换"):
                 success, result = script_replace(record['jtext'], vtext)
                 if success:
                     st.session_state.ctext = result
@@ -793,6 +921,48 @@ def edit_page():
                     st.rerun()
                 else:
                     st.error(result)
+
+        if btn_col2.button("🤖 AI 一键翻译"):
+            import json
+            with st.spinner("AI 正在翻译中，请稍候..."):
+                jtext_clean = display_text(record['jtext'])
+                # 发送给 AI 之前去掉前后的空白字符（尤其是全角空格），以免大模型处理或者返回不一致
+                lines = [line.strip() for line in jtext_clean.split('\n') if line.strip()]
+                
+                if not lines:
+                    st.warning("没有可翻译的文本。")
+                else:
+                    source_hash = hashlib.md5((table + str(record['ID']) + "".join(lines)).encode('utf-8')).hexdigest()
+                    cached = get_cached_translation(source_hash)
+                    
+                    if cached:
+                        translated_lines = json.loads(cached)
+                        st.success("使用了缓存的翻译结果！")
+                        success = True
+                    else:
+                        glossary = get_glossary(table)
+                        success, translated_lines = call_dashscope_api(lines, glossary)
+                        if success:
+                            from ai_translation import get_ai_config
+                            import json
+                            model_used = get_ai_config('model_name')
+                            set_cached_translation(source_hash, json.dumps(lines, ensure_ascii=False), json.dumps(translated_lines, ensure_ascii=False), model_used)
+                    
+                    if success:
+                        vtext_new = '\n'.join(translated_lines)
+                        st.session_state.temp_text = vtext_new
+                        
+                        # 自动执行脚本替换填回控制符
+                        replace_success, final_result = script_replace(record['jtext'], vtext_new)
+                        if replace_success:
+                            st.session_state.ctext = final_result
+                            st.success("AI 翻译并自动回填成功！请核对并保存。")
+                            st.rerun()
+                        else:
+                            st.warning("AI 翻译成功，但自动回填失败，请在右侧检查临时翻译文本。")
+                            st.rerun()
+                    else:
+                        st.error(f"翻译失败: {translated_lines}")
 
         if s_left.button("保存译文"):
             time.sleep(0.5)
@@ -837,12 +1007,29 @@ def main():
     elif st.session_state.page == 'edit':
         st.set_page_config(layout="wide")
         edit_page()
+    elif st.session_state.page == 'ai_settings':
+        st.set_page_config(layout="centered")
+        from ai_translation import render_ai_settings
+        render_ai_settings()
+        if st.button("返回"):
+            st.session_state.page = 'select_table'
+            st.rerun()
+    elif st.session_state.page == 'user_admin':
+        st.set_page_config(layout="centered")
+        from user_admin import main as user_admin_page
+        user_admin_page()
+        if st.button("返回"):
+            st.session_state.page = 'select_table'
+            st.rerun()
+    elif st.session_state.page == 'glossary_mgmt':
+        st.set_page_config(layout="wide")
+        from ai_translation import render_glossary_management
+        render_glossary_management(st.session_state.get('selected_table', 'global'))
+        if st.button("返回编辑界面"):
+            st.session_state.page = 'edit'
+            st.rerun()
     else:
         st.set_page_config(layout="centered")
         table_selection_page()
 if __name__ == '__main__':
     main()
-
-
-
-
