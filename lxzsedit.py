@@ -760,7 +760,7 @@ def edit_page():
     b_up,b_down,b_input_id,b_goto=st.sidebar.columns(4, gap="small")
     button_up=b_up.button("◀️", help="上一条记录")
     button_down=b_down.button("▶️", help="下一条记录")
-    input_id=b_input_id.number_input("", min_value=0, max_value=len(ids) - 1, value=0, label_visibility="collapsed")
+    input_id=b_input_id.number_input("跳转记录ID", min_value=0, max_value=len(ids) - 1, value=0, label_visibility="collapsed")
     button_goto=b_goto.button("🎯", help="跳转")
     
     # 跳转到指定记录
@@ -800,6 +800,13 @@ def edit_page():
     st.sidebar.divider()
     if st.sidebar.button("📝 管理本表词汇"):
         st.session_state.page = 'glossary_mgmt'
+        st.rerun()
+    if st.sidebar.button("🔍 脚本冲突检测"):
+        if 'previous_id' in st.session_state:
+            release_lock(table, ids[st.session_state.previous_id])
+        st.session_state.conflict_default_tables = [table]
+        st.session_state.conflict_return_page = 'edit'
+        st.session_state.page = 'conflict_analysis'
         st.rerun()
     
     # 获取所有留言及其跟帖
@@ -962,7 +969,19 @@ def edit_page():
                             st.warning("AI 翻译成功，但自动回填失败，请在右侧检查临时翻译文本。")
                             st.rerun()
                     else:
-                        st.error(f"翻译失败: {translated_lines}")
+                        # 检查是否是包含了部分结果的字典（来自翻译行数不匹配）
+                        if isinstance(translated_lines, dict) and "partial_result" in translated_lines:
+                            error_msg = translated_lines["error"]
+                            partial_res = translated_lines["partial_result"]
+                            st.error(f"翻译失败: {error_msg}")
+                            
+                            if isinstance(partial_res, list) and len(partial_res) > 0:
+                                st.session_state.temp_text = '\n'.join(partial_res)
+                                st.warning("已将不匹配的翻译结果放入右侧临时文本区，请手工调整后点击'脚本替换'。")
+                                time.sleep(1.5)
+                                st.rerun()
+                        else:
+                            st.error(f"翻译失败: {translated_lines}")
 
         if s_left.button("保存译文"):
             time.sleep(0.5)
@@ -1020,6 +1039,13 @@ def main():
         user_admin_page()
         if st.button("返回"):
             st.session_state.page = 'select_table'
+            st.rerun()
+    elif st.session_state.page == 'conflict_analysis':
+        st.set_page_config(layout="wide")
+        from conflict_analyzer import render_conflict_analyzer
+        render_conflict_analyzer()
+        if st.button("返回"):
+            st.session_state.page = st.session_state.get('conflict_return_page', 'select_table')
             st.rerun()
     elif st.session_state.page == 'glossary_mgmt':
         st.set_page_config(layout="wide")
